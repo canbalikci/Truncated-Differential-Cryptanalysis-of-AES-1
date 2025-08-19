@@ -1,0 +1,159 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+#define NBYTES 16
+#define NCOLS   4
+#define NROWS   4
+#define N_BITS  8
+
+typedef struct {
+    int active[NBYTES];
+} state_t;
+
+int total_rounds;
+double total_prob;
+unsigned long long path_count;
+
+int target_counts[NCOLS] = {1, 2, 3, 4};
+
+static inline int delta(int m) {
+    return (m > 0) ? 1 : 0;
+}
+
+double P_ij(int i, int j) {
+    double M = pow(2.0, N_BITS) - 1.0;
+    double t1 =      delta(i - j)     / pow(M, j);
+    double t2 = 4.0 * delta(i - j - 1) / pow(M, j + 1);
+    double t3 =10.0 * delta(i - j - 2) / pow(M, j + 2);
+    double t4 =20.0 * delta(i - j - 3) / pow(M, j + 3);
+    return t1 - t2 + t3 - t4;
+}
+
+void shift_rows(const state_t *in, state_t *out) {
+    static const int idx_map[NBYTES] = {
+         0, 5,10,15,
+         4, 9,14, 3,
+         8,13, 2, 7,
+        12, 1, 6,11
+    };
+    for(int i = 0; i < NBYTES; i++)
+        out->active[i] = in->active[idx_map[i]];
+}
+
+void dfs_mc_columns(int col,
+                    const state_t *sr_state,
+                    state_t *mc_state,
+                    double curr_prob,
+                    int round) {
+    if (col == NCOLS) {
+        if (round < total_rounds) {
+            state_t next_sr;
+            shift_rows(mc_state, &next_sr);
+            dfs_mc_columns(0, &next_sr, mc_state, curr_prob, round + 1);
+        } else {
+            state_t final_sr;
+            shift_rows(mc_state, &final_sr);
+
+            int col_counts[NCOLS] = {0};
+            for(int c = 0; c < NCOLS; c++) {
+                for(int r = 0; r < NROWS; r++) {
+                    col_counts[c] += final_sr.active[c*4 + r];
+                }
+            }
+            for(int c = 0; c < NCOLS; c++) {
+                if (col_counts[c] != target_counts[c])
+                    return;
+            }
+            total_prob  += curr_prob;
+            path_count++;
+        }
+        return;
+    }
+
+    int col_bytes[NROWS];
+    for(int r = 0; r < NROWS; r++)
+        col_bytes[r] = sr_state->active[col*4 + r];
+
+    int any_active = col_bytes[0]|col_bytes[1]|col_bytes[2]|col_bytes[3];
+    if (!any_active) {
+        for(int r = 0; r < NROWS; r++)
+            mc_state->active[col*4 + r] = 0;
+        dfs_mc_columns(col+1, sr_state, mc_state, curr_prob, round);
+        return;
+    }
+
+    int cnt_active = col_bytes[0]+col_bytes[1]+col_bytes[2]+col_bytes[3];
+    int i = cnt_active;
+
+    for(int p = 0; p <= NROWS; p++) {
+        double prob = P_ij(i, p);
+        if (prob <= 0.0) continue;
+
+        int mask_max = 1 << NROWS;  // 16
+        for(int mask = 0; mask < mask_max; mask++) {
+            if (__builtin_popcount(mask) != p) continue;
+            for(int r = 0; r < NROWS; r++) {
+                int is_passive = (mask >> r) & 1;
+                mc_state->active[col*4 + r] = is_passive ? 0 : 1;
+            }
+            dfs_mc_columns(col+1, sr_state, mc_state, curr_prob * prob, round);
+        }
+    }
+}
+
+int main() {
+    total_rounds = 1;
+    total_prob   = 0.0;
+    path_count   = 0;
+
+    static state_t in = { .active = {0} };
+    for(int k = 0; k < NBYTES; k++)
+        in.active[k] = 1;
+
+    state_t sr0, mc0;
+    shift_rows(&in, &sr0);
+    mc0 = sr0;
+
+    dfs_mc_columns(0, &sr0, &mc0, 1.0, 1);
+
+    int counts_copy[NCOLS];
+    for(int i = 0; i < NCOLS; i++) counts_copy[i] = target_counts[i];
+    for(int i = 0; i < NCOLS - 1; i++) {
+        for(int j = i + 1; j < NCOLS; j++) {
+            if (counts_copy[i] > counts_copy[j]) {
+                int tmp = counts_copy[i];
+                counts_copy[i] = counts_copy[j];
+                counts_copy[j] = tmp;
+            }
+        }
+    }
+
+    int freq[NCOLS] = {0};
+    int distinct_cnt = 0;
+    for(int i = 0; i < NCOLS; ) {
+        int v = counts_copy[i];
+        int c = 1;
+        int j = i + 1;
+        while (j < NCOLS && counts_copy[j] == v) {
+            c++;
+            j++;
+        }
+        freq[distinct_cnt++] = c;
+        i = j;
+    }
+    unsigned long long multiplier = 1;
+    unsigned long long fact_n = 1;
+    for(int i = 1; i <= NCOLS; i++) fact_n *= i;
+
+    unsigned long long denom = 1;
+    for(int i = 0; i < distinct_cnt; i++) {
+        unsigned long long f = 1;
+        for(int k = 1; k <= freq[i]; k++) f *= k;
+        denom *= f;
+    }
+    multiplier = fact_n / denom;
+    printf("Number of Path: %llu\n", path_count * multiplier);
+
+    return 0;
+}

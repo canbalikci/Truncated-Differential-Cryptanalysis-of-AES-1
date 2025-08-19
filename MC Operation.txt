@@ -1,0 +1,84 @@
+
+#include <stdio.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdint.h>
+
+#define AES_POLY 0x1B
+#define MULT_BY_2(x)  ((x) << 1) ^ (((x) >> 7) * AES_POLY)
+#define MULT_BY_3(x)  (MULT_BY_2(x) ^ (x))
+
+void MixColumns(uint8_t state[4]) {
+    uint8_t temp[4];
+
+    temp[0] = MULT_BY_2(state[0]) ^ MULT_BY_3(state[1]) ^ state[2] ^ state[3];
+    temp[1] = state[0] ^ MULT_BY_2(state[1]) ^ MULT_BY_3(state[2]) ^ state[3];
+    temp[2] = state[0] ^ state[1] ^ MULT_BY_2(state[2]) ^ MULT_BY_3(state[3]);
+    temp[3] = MULT_BY_3(state[0]) ^ state[1] ^ state[2] ^ MULT_BY_2(state[3]);
+
+    for (int i = 0; i < 4; i++) {
+        state[i] = temp[i];
+    }
+}
+
+int main() {
+    uint8_t input[4], output[4];
+
+    int count_1zero = 0;
+    int count_2zero = 0;
+    int count_3zero = 0;
+    int count_4zero = 0;
+
+    for (int a = 1; a <= 255; a++) {
+        for (int b = 1; b <= 255; b++) {
+            for (int c = 1; c <= 255; c++) {
+                for (int d = 1; d <= 255; d++) {
+                    input[0] = a;
+                    input[1] = b;
+                    input[2] = c;
+                    input[3] = d;
+
+                    for (int i = 0; i < 4; i++) {
+                        output[i] = input[i];
+                    }
+                    MixColumns(output);
+
+                    int zero_count = 0;
+                    for (int i = 0; i < 4; i++) {
+                        if (output[i] == 0) zero_count++;
+                    }
+
+                    if (zero_count == 1) {
+                        count_1zero++;
+                        printf("one zero: input: [%d, %d, %d, %d] -> output: [%d, %d, %d, %d]\n",
+                               a, b, c, d, output[0], output[1], output[2], output[3]);
+                    }
+                    else if (zero_count == 2) {
+                        count_2zero++;
+                        printf("two zeros: input: [%d, %d, %d, %d] -> output: [%d, %d, %d, %d]\n",
+                               a, b, c, d, output[0], output[1], output[2], output[3]);
+                    }
+                    else if (zero_count == 3) {
+                        count_3zero++;
+                        printf("three zeros: input: [%d, %d, %d, %d] -> output: [%d, %d, %d, %d]\n",
+                               a, b, c, d, output[0], output[1], output[2], output[3]);
+                    }
+                    else if (zero_count == 4) {
+                        count_4zero++;
+                        printf("four zeros: input: [%d, %d, %d, %d] -> output: [%d, %d, %d, %d]\n",
+                               a, b, c, d, output[0], output[1], output[2], output[3]);
+                    }
+                }
+            }
+        }
+    }
+
+
+    printf("\n=== Results ===\n");
+    printf("any one zero        : %d\n", count_1zero);
+    printf("any two zeros        : %d\n", count_2zero);
+    printf("any three zeros         : %d\n", count_3zero);
+    printf("any four zeros  : %d\n", count_4zero);
+
+    return 0;
+}
